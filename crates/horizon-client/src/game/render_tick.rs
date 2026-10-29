@@ -363,6 +363,13 @@ impl Game<'_> {
             gateway_particles: &gateway_particles,
             thundering,
             ultrawarm: self.dim == Dim::Nether,
+            leaf: self.settings.extras.falling_leaves.then_some(
+                horizon_client::particles::LeafOptions {
+                    size: self.settings.extras.falling_leaf_size,
+                    lifetime: self.settings.extras.falling_leaf_lifetime,
+                    wind: self.settings.extras.falling_leaf_wind,
+                },
+            ),
         };
         if let Some(e) = eye {
             let block = [

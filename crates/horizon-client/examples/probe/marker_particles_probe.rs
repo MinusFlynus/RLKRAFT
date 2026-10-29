@@ -82,6 +82,7 @@ pub fn main() -> Result<()> {
             gateway_particles: &|_, _| 0,
             thundering: false,
             ultrawarm: false,
+            leaf: None,
         };
         engine.seed_randoms(1057, 0, 0);
         engine.requested = Some(Vec::new());

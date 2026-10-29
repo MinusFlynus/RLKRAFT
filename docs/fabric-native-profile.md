@@ -36,6 +36,13 @@ covers the user's five Unbound overrides; it does not establish compatibility
 with every Iris shader stage, profile, expression or rendering feature.
 Tests check archive preservation, language-file isolation and source handling.
 
+The optional native Falling Leaves tuning keeps the installed profile's
+0.1-block leaf size, 200-tick lifetime and wind switch. REA observed that the
+installed regular-leaf rate 20 maps to the same 0.01 ambient-tick chance Horizon
+already uses, while conifer rate 0 matches Horizon's disabled spruce leaves.
+The mod's seasonal multipliers, snowflakes, decaying-leaf bursts and custom
+wind-state noise are not implemented.
+
 Horizon already provides dynamic lights, Mouse Tweaks-style controls,
 inventory sorting with mouse bindings, a minimap and a recipe-viewer API.
 Those are native equivalents, not complete ports of LambDynamicLights,

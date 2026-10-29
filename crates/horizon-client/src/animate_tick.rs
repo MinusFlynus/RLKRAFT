@@ -8,7 +8,7 @@ use crate::{
     blocks::{BlockFacts, Fluid},
     command::args::GameMode,
     items::ItemStack,
-    particles::{ParticleEngine, ParticleOptions, ParticleType as T, along_axis},
+    particles::{LeafOptions, ParticleEngine, ParticleOptions, ParticleType as T, along_axis},
     world::World,
 };
 use horizon_core::{
@@ -454,6 +454,8 @@ pub struct AnimateContext<'a> {
     pub thundering: bool,
     /// The dimension has `water_evaporates` and drips lava from dripstone (the Nether).
     pub ultrawarm: bool,
+    /// Imported Falling Leaves particle size, lifetime and wind, when enabled.
+    pub leaf: Option<LeafOptions>,
 }
 
 /// `ClientLevel.getMarkerParticleTarget`: only the selected main-hand item counts.
@@ -942,13 +944,14 @@ fn block_animate_tick(
             {
                 let r = engine.random();
                 let p = [fx + r.next_double(), fy - 0.05, fz + r.next_double()];
-                let options = if ty == T::TintedLeaves {
+                let mut options = if ty == T::TintedLeaves {
                     let c = fixed_tint.unwrap_or_else(|| ctx.foliage(pos));
                     let f = |s: u32| ((c >> s) & 255) as f32 / 255.0;
                     ParticleOptions::colored(ty, [f(16), f(8), f(0), 1.0])
                 } else {
                     ParticleOptions::simple(ty)
                 };
+                options.leaf = ctx.leaf;
                 engine.add(&options, p, [0.0; 3]);
             }
         }

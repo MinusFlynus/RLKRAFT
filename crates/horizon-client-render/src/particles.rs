@@ -44,6 +44,14 @@ pub struct ParticleOptions {
     /// `ItemParticleOption`: the particle sprite of each layer of the item's
     /// model as resolved for the ground.
     pub item: Option<Vec<String>>,
+    /// Optional native Falling Leaves tuning. Ordinary packets keep vanilla values.
+    pub leaf: Option<LeafOptions>,
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LeafOptions {
+    pub size: f32,
+    pub lifetime: i32,
+    pub wind: bool,
 }
 impl ParticleOptions {
     pub fn simple(ty: ParticleType) -> Self {
@@ -55,6 +63,7 @@ impl ParticleOptions {
             to_color: [1.0, 0.0, 0.0],
             trail: None,
             item: None,
+            leaf: None,
         }
     }
     /// `ItemParticleOption`: the stack's layer particle sprites (`BreakingItemParticle`).
@@ -2390,7 +2399,7 @@ impl ParticleEngine {
             | T::RedPoplarLeaves
             | T::OrangePoplarLeaves
             | T::YellowPoplarLeaves => {
-                let (fall, side, swirl, flow, scale, start) = if ty == T::CherryLeaves {
+                let (fall, mut side, mut swirl, flow, scale, start) = if ty == T::CherryLeaves {
                     (0.25f32, 2.0f32, false, true, 1.0f32, 0.0f32)
                 } else {
                     (0.07, 10.0, true, false, 2.0, 0.021)
@@ -2398,9 +2407,16 @@ impl ParticleEngine {
                 let mut q = Particle::at(r, ty, p);
                 let rot_speed = (if r.next_boolean() { -30.0f32 } else { 30.0 }).to_radians();
                 let spin = (if r.next_boolean() { -5.0f32 } else { 5.0 }).to_radians();
-                q.lifetime = 300;
+                q.lifetime = o.leaf.map_or(300, |leaf| leaf.lifetime.clamp(16, 1200));
                 q.gravity = fall * 1.2 * 0.0025;
-                let s = scale * if r.next_boolean() { 0.05 } else { 0.075 };
+                let s = o.leaf.map_or_else(
+                    || scale * if r.next_boolean() { 0.05 } else { 0.075 },
+                    |leaf| leaf.size.clamp(0.02, 1.0),
+                );
+                if o.leaf.is_some_and(|leaf| !leaf.wind) {
+                    side = 0.0;
+                    swirl = false;
+                }
                 q.size = s;
                 q.set_size(s, s);
                 q.friction = 1.0;
@@ -4050,6 +4066,29 @@ mod tests {
         p.size_curve = Size::GrowIn;
         p.age = 0;
         assert!((p.quad_size(0.1) - (0.1f32 / 10.0 * 32.0)).abs() < 1e-6);
+    }
+    #[test]
+    fn imported_leaf_tuning_changes_only_leaf_particle_shape_and_lifetime() {
+        let mut engine = ParticleEngine::new(Path::new(""), &HashMap::new(), &HashSet::new());
+        let mut options =
+            ParticleOptions::colored(ParticleType::TintedLeaves, [0.2, 0.4, 0.6, 1.0]);
+        options.leaf = Some(LeafOptions {
+            size: 0.1,
+            lifetime: 200,
+            wind: false,
+        });
+        engine.add(&options, [0.0; 3], [0.0; 3]);
+        let particle = engine.pending.last().unwrap();
+        assert_eq!(particle.lifetime, 200);
+        assert!((particle.size - 0.1).abs() < f32::EPSILON);
+        assert!(matches!(
+            particle.behaviour,
+            Behaviour::Leaves {
+                wind: 0.0,
+                swirl: false,
+                ..
+            }
+        ));
     }
     #[test]
     fn lifetime_alpha_interpolates() {

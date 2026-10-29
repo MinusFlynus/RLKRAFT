@@ -65,6 +65,11 @@ pub struct Extras {
     pub dynamic_lights: bool,
     /// Native portraits for UUID-associated multiplayer chat messages.
     pub chat_heads: bool,
+    /// Use the installed Falling Leaves profile's native particle tuning.
+    pub falling_leaves: bool,
+    pub falling_leaf_size: f32,
+    pub falling_leaf_lifetime: i32,
+    pub falling_leaf_wind: bool,
     pub zoom: bool,
     /// A vanilla key name (`key.keyboard.z`).
     pub zoom_key: String,
@@ -121,6 +126,10 @@ impl Default for Extras {
             fullbright: false,
             dynamic_lights: false,
             chat_heads: false,
+            falling_leaves: false,
+            falling_leaf_size: 0.1,
+            falling_leaf_lifetime: 200,
+            falling_leaf_wind: true,
             zoom: false,
             zoom_key: "key.keyboard.z".into(),
             zoom_level: 4,
@@ -175,6 +184,18 @@ impl Extras {
                 "fullbright" => e.fullbright = flag(e.fullbright),
                 "dynamicLights" => e.dynamic_lights = flag(e.dynamic_lights),
                 "chatHeads" => e.chat_heads = flag(e.chat_heads),
+                "fallingLeaves" => e.falling_leaves = flag(e.falling_leaves),
+                "fallingLeafSize" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        e.falling_leaf_size = v.clamp(0.02, 1.0);
+                    }
+                }
+                "fallingLeafLifetime" => {
+                    if let Ok(v) = value.parse::<i32>() {
+                        e.falling_leaf_lifetime = v.clamp(16, 1200);
+                    }
+                }
+                "fallingLeafWind" => e.falling_leaf_wind = flag(e.falling_leaf_wind),
                 "zoom" => e.zoom = flag(e.zoom),
                 "zoomKey" if value.starts_with("key.") => e.zoom_key = value.to_owned(),
                 "zoomLevel" => {
@@ -265,6 +286,13 @@ impl Extras {
             bool_text(self.discord_presence),
         );
         text.push_str(&format!("chatHeads:{}\n", bool_text(self.chat_heads)));
+        text.push_str(&format!(
+            "fallingLeaves:{}\nfallingLeafSize:{}\nfallingLeafLifetime:{}\nfallingLeafWind:{}\n",
+            bool_text(self.falling_leaves),
+            self.falling_leaf_size,
+            self.falling_leaf_lifetime,
+            bool_text(self.falling_leaf_wind),
+        ));
         text
     }
     /// Binds the extra key `name` (`SORT_KEY`); false for
@@ -384,6 +412,7 @@ impl Cps {
 pub enum Item {
     Fullbright,
     DynamicLights,
+    FallingLeaves,
     ChatHeads,
     AutoReconnect,
     MouseTweaks,
@@ -403,6 +432,8 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         Err("Lighting"),
         Ok(Fullbright),
         Ok(DynamicLights),
+        Err("World"),
+        Ok(FallingLeaves),
         Err("Inventory"),
         Ok(MouseTweaks),
         Ok(MouseTweaksWheel),
@@ -418,6 +449,7 @@ impl Item {
         match self {
             Item::Fullbright => "Fullbright",
             Item::DynamicLights => "Dynamic lights",
+            Item::FallingLeaves => "Falling leaves",
             Item::ChatHeads => "Chat portraits",
             Item::AutoReconnect => "Auto-reconnect",
             Item::MouseTweaks => "Mouse Tweaks controls",
@@ -435,8 +467,8 @@ impl Item {
         Some(match self {
             MouseTweaksWheel => MouseTweaks,
             SortKey => Sort,
-            Fullbright | DynamicLights | ChatHeads | MouseTweaks | Sort | AutoReconnect | NoAi
-            | AgentControl | DiscordPresence => {
+            Fullbright | DynamicLights | FallingLeaves | ChatHeads | MouseTweaks | Sort
+            | AutoReconnect | NoAi | AgentControl | DiscordPresence => {
                 return None;
             }
         })
@@ -452,6 +484,7 @@ impl Item {
                 "Rejoins a server after a lost connection or a restart, never after a kick or ban."
             }
             Item::ChatHeads => "Show player portraits beside UUID-associated server chat messages.",
+            Item::FallingLeaves => "Use the imported native leaf size, lifetime and wind settings.",
             Item::MouseTweaks => {
                 "Right-drag places one per slot, left-drag gathers the held item, Shift + left-drag moves every slot."
             }
@@ -482,6 +515,7 @@ impl Item {
             Item::Fullbright => Some(Cost::None),
             Item::DynamicLights => Some(Cost::Low),
             Item::ChatHeads => Some(Cost::Low),
+            Item::FallingLeaves => Some(Cost::Low),
             Item::AutoReconnect | Item::MouseTweaks | Item::Sort => Some(Cost::None),
             _ => None,
         }
@@ -492,6 +526,7 @@ impl Item {
             Item::Fullbright => e.fullbright,
             Item::DynamicLights => e.dynamic_lights,
             Item::ChatHeads => e.chat_heads,
+            Item::FallingLeaves => e.falling_leaves,
             Item::AutoReconnect => e.auto_reconnect,
             Item::MouseTweaks => e.mouse_tweaks,
             Item::MouseTweaksWheel => e.mouse_tweaks_wheel,
@@ -519,6 +554,7 @@ impl Item {
             Item::Fullbright => e.fullbright = !e.fullbright,
             Item::DynamicLights => e.dynamic_lights = !e.dynamic_lights,
             Item::ChatHeads => e.chat_heads = !e.chat_heads,
+            Item::FallingLeaves => e.falling_leaves = !e.falling_leaves,
             Item::AutoReconnect => e.auto_reconnect = !e.auto_reconnect,
             Item::MouseTweaks => e.mouse_tweaks = !e.mouse_tweaks,
             Item::MouseTweaksWheel => e.mouse_tweaks_wheel = !e.mouse_tweaks_wheel,
@@ -559,6 +595,12 @@ mod tests {
         assert_eq!(Extras::parse(&e.serialize()), e);
         Item::ChatHeads.cycle(&mut e, false);
         assert_eq!(Item::ChatHeads.switch(&e), Some(true));
+        assert_eq!(Extras::parse(&e.serialize()), e);
+        Item::FallingLeaves.cycle(&mut e, false);
+        assert_eq!(Item::FallingLeaves.switch(&e), Some(true));
+        e.falling_leaf_size = 0.1;
+        e.falling_leaf_lifetime = 200;
+        e.falling_leaf_wind = true;
         assert_eq!(Extras::parse(&e.serialize()), e);
         e.zoom = true;
         e.zoom_key = "key.keyboard.c".into();
