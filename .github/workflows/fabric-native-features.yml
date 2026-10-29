@@ -22,9 +22,9 @@ jobs:
       - name: Lint native renderer and game integration
         run: cargo +stable clippy --locked -p horizon-client-render -p horizon-client --lib --bins -- -D warnings
       - name: Chat layout and interaction regressions
-        run: cargo +stable test --locked -p horizon-client-render --lib chat::tests::
+        run: 'cargo +stable test --locked -p horizon-client-render --lib chat::tests::'
       - name: Extras settings regressions
-        run: cargo +stable test --locked -p horizon-client-render --lib extras::tests::
+        run: 'cargo +stable test --locked -p horizon-client-render --lib extras::tests::'
       - name: Build optimized Windows client
         run: cargo +stable build --locked --profile fast -p horizon-client --bin horizon-client --bin horizon-ctl --features horizon-client/mods
       - uses: actions/upload-artifact@v4
