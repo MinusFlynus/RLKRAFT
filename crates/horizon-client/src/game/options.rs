@@ -291,9 +291,13 @@ impl Game<'_> {
         let chat = s.chat_options();
         let rescale = {
             let o = &self.ui.chat.options;
-            o.width != chat.width || o.scale != chat.scale || o.line_spacing != chat.line_spacing
+            o.width != chat.width
+                || o.scale != chat.scale
+                || o.line_spacing != chat.line_spacing
+                || self.ui.chat.heads != s.extras.chat_heads
         };
         self.ui.chat.options = chat;
+        self.ui.chat.heads = s.extras.chat_heads;
         if rescale {
             self.ui.chat.rescale(&self.gui.atlas);
         }

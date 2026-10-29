@@ -713,6 +713,14 @@ impl Game<'_> {
         content: horizon_client::text::Text,
         source: horizon_client::chat::ChatSource,
     ) {
+        self.chat_line_with_head(content, source, None);
+    }
+    fn chat_line_with_head(
+        &mut self,
+        content: horizon_client::text::Text,
+        source: horizon_client::chat::ChatSource,
+        head: Option<horizon_client::chat::ChatHead>,
+    ) {
         if !self.ui.chat.shows(source) {
             return;
         }
@@ -721,13 +729,14 @@ impl Game<'_> {
         // GuiMessageTag.systemSinglePlayer: the grey bar at the line's left.
         let indicator = (source != horizon_client::chat::ChatSource::Player)
             .then_some(horizon_client::chat::SYSTEM_INDICATOR);
-        self.ui.chat.add(
+        self.ui.chat.add_with_head(
             &self.gui.atlas,
             content,
             indicator,
             source,
             self.ticks,
             self.screen == Screen::Chat,
+            head,
         );
         if self.mods.running() {
             self.mods_chat(&text);
@@ -2849,7 +2858,22 @@ impl Game<'_> {
                     .as_ref()
                     .map_or_else(|| serde_json::Value::from(p.content.as_str()), tag_to_json);
                 let line = self.format_chat(&p.chat_type, content);
-                self.chat_line(line, horizon_client::chat::ChatSource::Player);
+                let head = self.settings.extras.chat_heads.then(|| {
+                    let remote = self.remote.as_ref();
+                    let player = remote.and_then(|r| r.tab_players.get(&p.sender));
+                    horizon_client::chat::ChatHead {
+                        skin: remote
+                            .and_then(|r| r.skins.get(&p.sender))
+                            .cloned()
+                            .unwrap_or_else(|| {
+                                horizon_client::tab_list::default_skin(p.sender).to_owned()
+                            }),
+                        hat: player.is_none_or(|p| p.show_hat),
+                        flip: player
+                            .is_some_and(|p| matches!(p.name.as_str(), "Dinnerbone" | "Grumm")),
+                    }
+                });
+                self.chat_line_with_head(line, horizon_client::chat::ChatSource::Player, head);
             }
             C::DisguisedChat(p) => {
                 let content = horizon_client::scoreboard::tag_to_json(&p.message);

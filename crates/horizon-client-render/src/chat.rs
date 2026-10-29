@@ -165,6 +165,14 @@ struct Message {
     content: Text,
     indicator: Option<u32>,
     source: ChatSource,
+    head: Option<ChatHead>,
+}
+/// A chat sender's skin, reusing the player-list face renderer and atlas.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ChatHead {
+    pub skin: String,
+    pub hat: bool,
+    pub flip: bool,
 }
 /// A wrapped line (`GuiMessage.Line`).
 #[derive(Clone, Debug)]
@@ -172,6 +180,7 @@ struct Line {
     added: u64,
     content: Text,
     indicator: Option<u32>,
+    head: Option<ChatHead>,
 }
 
 /// `ChatComponent.AlphaCalculator.timeBased`: opaque for 180 ticks, then
@@ -187,6 +196,8 @@ fn time_alpha(ticks: u64, added: u64) -> f32 {
 }
 #[derive(Default)]
 pub struct Chat {
+    /// Optional native sender portraits; off preserves vanilla layout.
+    pub heads: bool,
     messages: Vec<Message>,
     /// Wrapped lines, newest first.
     lines: Vec<Line>,
@@ -212,7 +223,12 @@ impl Chat {
     }
     /// The wrapping width, `Mth.floor(getWidth() / getScale())`.
     fn max_width(&self) -> i32 {
-        (f64::from(self.options.width_px()) / self.options.scale).floor() as i32
+        ((f64::from(self.options.width_px()) / self.options.scale).floor() as i32
+            - self.head_padding())
+        .max(1)
+    }
+    fn head_padding(&self) -> i32 {
+        if self.heads { 9 } else { 0 }
     }
     /// ChatComponent.addMessage: wrap, prepend and trim to 100 lines. A
     /// message the Chat option hides is dropped, unlogged.
@@ -236,6 +252,39 @@ impl Chat {
         ticks: u64,
         focused: bool,
     ) {
+        self.add_message_with_head(font, content, indicator, source, ticks, focused, None);
+    }
+    /// Add an authenticated player message with a portrait supplied by its UUID.
+    pub fn add_with_head(
+        &mut self,
+        atlas: &HudAtlas,
+        content: Text,
+        indicator: Option<u32>,
+        source: ChatSource,
+        ticks: u64,
+        focused: bool,
+        head: Option<ChatHead>,
+    ) {
+        self.add_message_with_head(
+            &atlas.font,
+            content,
+            indicator,
+            source,
+            ticks,
+            focused,
+            head,
+        );
+    }
+    fn add_message_with_head(
+        &mut self,
+        font: &crate::font::Font,
+        content: Text,
+        indicator: Option<u32>,
+        source: ChatSource,
+        ticks: u64,
+        focused: bool,
+        head: Option<ChatHead>,
+    ) {
         if !self.abilities.shows(source) {
             return;
         }
@@ -249,6 +298,7 @@ impl Chat {
             content,
             indicator,
             source,
+            head,
         };
         self.add_lines(font, &message, focused);
         self.messages.insert(0, message);
@@ -258,7 +308,11 @@ impl Chat {
     fn add_lines(&mut self, font: &crate::font::Font, message: &Message, focused: bool) {
         let width = self.max_width();
         let content = self.displayed(&message.content);
-        for line in font.wrap_components(&content, width) {
+        for (index, line) in font
+            .wrap_components(&content, width)
+            .into_iter()
+            .enumerate()
+        {
             if focused && self.scroll > 0 {
                 self.new_since_scroll = true;
                 self.scroll_by(1, focused);
@@ -269,6 +323,7 @@ impl Chat {
                     added: message.added,
                     content: line,
                     indicator: message.indicator,
+                    head: (index == 0).then(|| message.head.clone()).flatten(),
                 },
             );
         }
@@ -423,9 +478,23 @@ impl Chat {
             let opacity = alpha * text_opacity;
             let color = hud_layout::white(opacity);
             if color >> 24 != 0 {
+                if self.heads
+                    && let Some(head) = &line.head
+                {
+                    crate::tab_list::face(
+                        &mut out,
+                        &head.skin,
+                        0,
+                        bottom - bottom_to_text - 1,
+                        8,
+                        head.hat,
+                        head.flip,
+                        color,
+                    );
+                }
                 out.push(GuiDraw::Text {
                     text: line.content.clone(),
-                    x: 0,
+                    x: self.head_padding(),
                     y: bottom - bottom_to_text,
                     color,
                     shadow: true,
@@ -563,7 +632,7 @@ impl Chat {
         let x = x / f64::from(scale) - 4.0;
         let bottom = hud_layout::floor((height - 40) as f32 / scale);
         let from_bottom = f64::from(bottom) - y / f64::from(scale);
-        if x >= f64::from(self.max_width()) || from_bottom <= 0.0 {
+        if x >= f64::from(self.max_width() + self.head_padding()) || from_bottom <= 0.0 {
             return None;
         }
         let row = (from_bottom / f64::from(self.options.line_height())).ceil() as usize - 1;
@@ -581,6 +650,7 @@ impl Chat {
         y: f64,
     ) -> Option<crate::text::Style> {
         let (line, mut x) = self.line_at(height, x, y)?;
+        x -= f64::from(self.head_padding());
         if x < 0.0 {
             return None;
         }

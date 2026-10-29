@@ -34,9 +34,105 @@ fn add(chat: &mut Chat, font: &Font, content: Text) {
                 added: 0,
                 content,
                 indicator: None,
+                head: None,
             },
         );
     }
+}
+
+fn portrait() -> ChatHead {
+    ChatHead {
+        skin: "entity/player/wide/steve".into(),
+        hat: true,
+        flip: false,
+    }
+}
+
+#[test]
+fn portraits_wrap_once_per_message_and_preserve_fade_and_history() {
+    let font = font();
+    let mut chat = Chat {
+        heads: true,
+        ..Chat::default()
+    };
+    chat.options.width = 0.0;
+    chat.add_message_with_head(
+        &font,
+        Text::literal("one two three four"),
+        None,
+        ChatSource::Player,
+        0,
+        false,
+        Some(portrait()),
+    );
+    assert!(chat.lines.len() > 1);
+    assert_eq!(
+        chat.lines.iter().filter(|line| line.head.is_some()).count(),
+        1
+    );
+    assert!(chat.lines.last().unwrap().head.is_some());
+    let draws = chat.layout(360, 0, true);
+    assert_eq!(
+        draws
+            .iter()
+            .filter(|d| matches!(d, GuiDraw::Blit { .. }))
+            .count(),
+        2
+    );
+    assert!(
+        draws
+            .iter()
+            .filter_map(|d| match d {
+                GuiDraw::Text { x, .. } => Some(*x),
+                _ => None,
+            })
+            .all(|x| x == 9)
+    );
+    assert_eq!(chat.recent_lines(1), ["one two three four"]);
+    assert!(
+        !chat
+            .layout(360, 200, false)
+            .iter()
+            .any(|d| matches!(d, GuiDraw::Blit { .. }))
+    );
+    chat.heads = false;
+    chat.rewrap(&font);
+    assert!(
+        !chat
+            .layout(360, 0, true)
+            .iter()
+            .any(|d| matches!(d, GuiDraw::Blit { .. }))
+    );
+}
+
+#[test]
+fn portrait_padding_keeps_links_clickable_without_making_the_face_a_link() {
+    let font = font();
+    let mut chat = Chat {
+        heads: true,
+        ..Chat::default()
+    };
+    chat.add_message_with_head(
+        &font,
+        Text::copyable("value"),
+        None,
+        ChatSource::Player,
+        0,
+        true,
+        Some(portrait()),
+    );
+    let start = 4.0 + 9.0 + f64::from(font.width("["));
+    assert_eq!(
+        chat.click_at(&font, 360, start + 0.5, 315.0),
+        Some(ClickEvent::CopyToClipboard("value".into()))
+    );
+    assert_eq!(chat.click_at(&font, 360, 6.0, 315.0), None);
+    chat.set_abilities(&font, ChatAbilities::new(ChatVisibility::System));
+    assert!(
+        chat.layout(360, 0, true)
+            .iter()
+            .all(|d| !matches!(d, GuiDraw::Blit { .. }))
+    );
 }
 
 #[test]

@@ -63,6 +63,8 @@ pub struct Extras {
     pub fullbright: bool,
     /// Held, dropped and burning light sources light their surroundings (`dynamic_light`).
     pub dynamic_lights: bool,
+    /// Native portraits for UUID-associated multiplayer chat messages.
+    pub chat_heads: bool,
     pub zoom: bool,
     /// A vanilla key name (`key.keyboard.z`).
     pub zoom_key: String,
@@ -118,6 +120,7 @@ impl Default for Extras {
         Self {
             fullbright: false,
             dynamic_lights: false,
+            chat_heads: false,
             zoom: false,
             zoom_key: "key.keyboard.z".into(),
             zoom_level: 4,
@@ -171,6 +174,7 @@ impl Extras {
             match key.trim() {
                 "fullbright" => e.fullbright = flag(e.fullbright),
                 "dynamicLights" => e.dynamic_lights = flag(e.dynamic_lights),
+                "chatHeads" => e.chat_heads = flag(e.chat_heads),
                 "zoom" => e.zoom = flag(e.zoom),
                 "zoomKey" if value.starts_with("key.") => e.zoom_key = value.to_owned(),
                 "zoomLevel" => {
@@ -224,7 +228,7 @@ impl Extras {
         e
     }
     pub fn serialize(&self) -> String {
-        format!(
+        let mut text = format!(
             "fullbright:{}\ndynamicLights:{}\nzoom:{}\nzoomKey:{}\nzoomLevel:{}\nzoomSmooth:{}\nzoomSensitivity:{}\nfps:{}\nfpsCorner:{}\nfpsLows:{}\nkeystrokes:{}\nkeystrokesCorner:{}\nkeystrokesCps:{}\nmovedToMods:{}\nminimap:{}\nminimapCorner:{}\nminimapSize:{}\nminimapShape:{}\nminimapZoom:{}\nminimapRotate:{}\nautoReconnect:{}\nmouseTweaks:{}\nmouseTweaksWheel:{}\nsort:{}\nsortKey:{}\n{}:{}\nagentControl:{}\ndiscordPresence:{}\n",
             bool_text(self.fullbright),
             bool_text(self.dynamic_lights),
@@ -259,7 +263,9 @@ impl Extras {
             bool_text(self.no_ai),
             bool_text(self.agent_control),
             bool_text(self.discord_presence),
-        )
+        );
+        text.push_str(&format!("chatHeads:{}\n", bool_text(self.chat_heads)));
+        text
     }
     /// Binds the extra key `name` (`SORT_KEY`); false for
     /// another name (a vanilla mapping).
@@ -378,6 +384,7 @@ impl Cps {
 pub enum Item {
     Fullbright,
     DynamicLights,
+    ChatHeads,
     AutoReconnect,
     MouseTweaks,
     MouseTweaksWheel,
@@ -403,6 +410,7 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         Ok(SortKey),
         Err("Multiplayer"),
         Ok(AutoReconnect),
+        Ok(ChatHeads),
     ]
 }
 impl Item {
@@ -410,6 +418,7 @@ impl Item {
         match self {
             Item::Fullbright => "Fullbright",
             Item::DynamicLights => "Dynamic lights",
+            Item::ChatHeads => "Chat portraits",
             Item::AutoReconnect => "Auto-reconnect",
             Item::MouseTweaks => "Mouse Tweaks controls",
             Item::MouseTweaksWheel => "Scroll wheel moves items",
@@ -426,7 +435,7 @@ impl Item {
         Some(match self {
             MouseTweaksWheel => MouseTweaks,
             SortKey => Sort,
-            Fullbright | DynamicLights | MouseTweaks | Sort | AutoReconnect | NoAi
+            Fullbright | DynamicLights | ChatHeads | MouseTweaks | Sort | AutoReconnect | NoAi
             | AgentControl | DiscordPresence => {
                 return None;
             }
@@ -442,6 +451,7 @@ impl Item {
             Item::AutoReconnect => {
                 "Rejoins a server after a lost connection or a restart, never after a kick or ban."
             }
+            Item::ChatHeads => "Show player portraits beside UUID-associated server chat messages.",
             Item::MouseTweaks => {
                 "Right-drag places one per slot, left-drag gathers the held item, Shift + left-drag moves every slot."
             }
@@ -471,6 +481,7 @@ impl Item {
         match self {
             Item::Fullbright => Some(Cost::None),
             Item::DynamicLights => Some(Cost::Low),
+            Item::ChatHeads => Some(Cost::Low),
             Item::AutoReconnect | Item::MouseTweaks | Item::Sort => Some(Cost::None),
             _ => None,
         }
@@ -480,6 +491,7 @@ impl Item {
         Some(match self {
             Item::Fullbright => e.fullbright,
             Item::DynamicLights => e.dynamic_lights,
+            Item::ChatHeads => e.chat_heads,
             Item::AutoReconnect => e.auto_reconnect,
             Item::MouseTweaks => e.mouse_tweaks,
             Item::MouseTweaksWheel => e.mouse_tweaks_wheel,
@@ -506,6 +518,7 @@ impl Item {
         match self {
             Item::Fullbright => e.fullbright = !e.fullbright,
             Item::DynamicLights => e.dynamic_lights = !e.dynamic_lights,
+            Item::ChatHeads => e.chat_heads = !e.chat_heads,
             Item::AutoReconnect => e.auto_reconnect = !e.auto_reconnect,
             Item::MouseTweaks => e.mouse_tweaks = !e.mouse_tweaks,
             Item::MouseTweaksWheel => e.mouse_tweaks_wheel = !e.mouse_tweaks_wheel,
@@ -543,6 +556,9 @@ mod tests {
         assert_eq!(Item::Fullbright.switch(&e), Some(true));
         Item::DynamicLights.cycle(&mut e, false);
         assert_eq!(Item::DynamicLights.switch(&e), Some(true));
+        assert_eq!(Extras::parse(&e.serialize()), e);
+        Item::ChatHeads.cycle(&mut e, false);
+        assert_eq!(Item::ChatHeads.switch(&e), Some(true));
         assert_eq!(Extras::parse(&e.serialize()), e);
         e.zoom = true;
         e.zoom_key = "key.keyboard.c".into();
