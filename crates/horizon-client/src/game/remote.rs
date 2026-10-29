@@ -3880,6 +3880,17 @@ impl Game<'_> {
             match event {
                 horizon_client::motion::MotionEvent::Emission { state, muffled, .. } => {
                     let sounds = self.res.facts().get(state).sounds.clone();
+                    if !muffled
+                        && self.settings.extras.presence_footsteps
+                        && horizon_client::presence_footsteps::play(
+                            &mut self.audio,
+                            &sounds.step,
+                            feet,
+                            self.settings.extras.presence_footsteps_volume,
+                        )
+                    {
+                        continue;
+                    }
                     // Player.playStepSound: muffled under the swim sound in water.
                     let (volume, pitch) = if muffled {
                         (sounds.volume * 0.05, sounds.pitch * 0.8)

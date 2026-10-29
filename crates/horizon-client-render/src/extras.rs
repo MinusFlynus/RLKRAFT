@@ -70,6 +70,10 @@ pub struct Extras {
     pub falling_leaf_size: f32,
     pub falling_leaf_lifetime: i32,
     pub falling_leaf_wind: bool,
+    /// Replace vanilla player steps with the imported Presence Footsteps material acoustics.
+    pub presence_footsteps: bool,
+    /// Presence Footsteps' global volume, stored as a 0..=1 multiplier.
+    pub presence_footsteps_volume: f32,
     pub zoom: bool,
     /// A vanilla key name (`key.keyboard.z`).
     pub zoom_key: String,
@@ -130,6 +134,8 @@ impl Default for Extras {
             falling_leaf_size: 0.1,
             falling_leaf_lifetime: 200,
             falling_leaf_wind: true,
+            presence_footsteps: false,
+            presence_footsteps_volume: 0.7,
             zoom: false,
             zoom_key: "key.keyboard.z".into(),
             zoom_level: 4,
@@ -196,6 +202,12 @@ impl Extras {
                     }
                 }
                 "fallingLeafWind" => e.falling_leaf_wind = flag(e.falling_leaf_wind),
+                "presenceFootsteps" => e.presence_footsteps = flag(e.presence_footsteps),
+                "presenceFootstepsVolume" => {
+                    if let Ok(v) = value.parse::<f32>() {
+                        e.presence_footsteps_volume = v.clamp(0.0, 1.0);
+                    }
+                }
                 "zoom" => e.zoom = flag(e.zoom),
                 "zoomKey" if value.starts_with("key.") => e.zoom_key = value.to_owned(),
                 "zoomLevel" => {
@@ -292,6 +304,11 @@ impl Extras {
             self.falling_leaf_size,
             self.falling_leaf_lifetime,
             bool_text(self.falling_leaf_wind),
+        ));
+        text.push_str(&format!(
+            "presenceFootsteps:{}\npresenceFootstepsVolume:{}\n",
+            bool_text(self.presence_footsteps),
+            self.presence_footsteps_volume,
         ));
         text
     }
@@ -413,6 +430,7 @@ pub enum Item {
     Fullbright,
     DynamicLights,
     FallingLeaves,
+    PresenceFootsteps,
     ChatHeads,
     AutoReconnect,
     MouseTweaks,
@@ -434,6 +452,7 @@ pub fn rows() -> Vec<Result<Item, &'static str>> {
         Ok(DynamicLights),
         Err("World"),
         Ok(FallingLeaves),
+        Ok(PresenceFootsteps),
         Err("Inventory"),
         Ok(MouseTweaks),
         Ok(MouseTweaksWheel),
@@ -450,6 +469,7 @@ impl Item {
             Item::Fullbright => "Fullbright",
             Item::DynamicLights => "Dynamic lights",
             Item::FallingLeaves => "Falling leaves",
+            Item::PresenceFootsteps => "Presence Footsteps acoustics",
             Item::ChatHeads => "Chat portraits",
             Item::AutoReconnect => "Auto-reconnect",
             Item::MouseTweaks => "Mouse Tweaks controls",
@@ -467,8 +487,8 @@ impl Item {
         Some(match self {
             MouseTweaksWheel => MouseTweaks,
             SortKey => Sort,
-            Fullbright | DynamicLights | FallingLeaves | ChatHeads | MouseTweaks | Sort
-            | AutoReconnect | NoAi | AgentControl | DiscordPresence => {
+            Fullbright | DynamicLights | FallingLeaves | PresenceFootsteps | ChatHeads
+            | MouseTweaks | Sort | AutoReconnect | NoAi | AgentControl | DiscordPresence => {
                 return None;
             }
         })
@@ -485,6 +505,9 @@ impl Item {
             }
             Item::ChatHeads => "Show player portraits beside UUID-associated server chat messages.",
             Item::FallingLeaves => "Use the imported native leaf size, lifetime and wind settings.",
+            Item::PresenceFootsteps => {
+                "Use the imported material-aware player footstep sounds at the profile's volume."
+            }
             Item::MouseTweaks => {
                 "Right-drag places one per slot, left-drag gathers the held item, Shift + left-drag moves every slot."
             }
@@ -516,6 +539,7 @@ impl Item {
             Item::DynamicLights => Some(Cost::Low),
             Item::ChatHeads => Some(Cost::Low),
             Item::FallingLeaves => Some(Cost::Low),
+            Item::PresenceFootsteps => Some(Cost::None),
             Item::AutoReconnect | Item::MouseTweaks | Item::Sort => Some(Cost::None),
             _ => None,
         }
@@ -527,6 +551,7 @@ impl Item {
             Item::DynamicLights => e.dynamic_lights,
             Item::ChatHeads => e.chat_heads,
             Item::FallingLeaves => e.falling_leaves,
+            Item::PresenceFootsteps => e.presence_footsteps,
             Item::AutoReconnect => e.auto_reconnect,
             Item::MouseTweaks => e.mouse_tweaks,
             Item::MouseTweaksWheel => e.mouse_tweaks_wheel,
@@ -555,6 +580,7 @@ impl Item {
             Item::DynamicLights => e.dynamic_lights = !e.dynamic_lights,
             Item::ChatHeads => e.chat_heads = !e.chat_heads,
             Item::FallingLeaves => e.falling_leaves = !e.falling_leaves,
+            Item::PresenceFootsteps => e.presence_footsteps = !e.presence_footsteps,
             Item::AutoReconnect => e.auto_reconnect = !e.auto_reconnect,
             Item::MouseTweaks => e.mouse_tweaks = !e.mouse_tweaks,
             Item::MouseTweaksWheel => e.mouse_tweaks_wheel = !e.mouse_tweaks_wheel,
@@ -601,6 +627,10 @@ mod tests {
         e.falling_leaf_size = 0.1;
         e.falling_leaf_lifetime = 200;
         e.falling_leaf_wind = true;
+        assert_eq!(Extras::parse(&e.serialize()), e);
+        Item::PresenceFootsteps.cycle(&mut e, false);
+        assert_eq!(Item::PresenceFootsteps.switch(&e), Some(true));
+        e.presence_footsteps_volume = 0.7;
         assert_eq!(Extras::parse(&e.serialize()), e);
         e.zoom = true;
         e.zoom_key = "key.keyboard.c".into();
@@ -723,3 +753,4 @@ mod tests {
         }
     }
 }
+

@@ -87,6 +87,7 @@ pub mod player_sync;
 pub mod portal_sections;
 pub mod pose;
 pub mod pregen;
+pub mod presence_footsteps;
 pub mod projectiles;
 pub mod raid;
 pub mod random_tick_sections;
@@ -142,3 +143,4 @@ pub use horizon_items::enchant;
 pub use horizon_items::item_data;
 pub use horizon_items::items;
 pub use horizon_items::random_sequences;
+

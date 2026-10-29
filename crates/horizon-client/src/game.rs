@@ -5347,6 +5347,17 @@ impl Game<'_> {
                 MotionEvent::HurtSound(sound) => self.player_hurt_sound(sound, feet),
                 MotionEvent::Emission { state, muffled, .. } => {
                     let sounds = self.res.facts().get(state).sounds.clone();
+                    if !muffled
+                        && self.settings.extras.presence_footsteps
+                        && horizon_client::presence_footsteps::play(
+                            &mut self.audio,
+                            &sounds.step,
+                            feet,
+                            self.settings.extras.presence_footsteps_volume,
+                        )
+                    {
+                        continue;
+                    }
                     // Entity.playStepSound: the block's step sound at 0.15 volume,
                     // muffled under the swim sound in water. Whether it plays is
                     // Player.getMovementEmission's call (shift on the ground),

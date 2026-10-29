@@ -712,6 +712,25 @@ impl Audio {
         let seed = self.random.next_long();
         self.play_seeded(event, at, volume, pitch, seed);
     }
+    /// Play one event with independently sampled volume and pitch ranges.
+    /// Presence Footsteps' acoustic files express both as percentages; keeping
+    /// the two draws here reuses the sound engine RNG without allocating a
+    /// second random source in the movement hot path.
+    pub fn play_varied(
+        &mut self,
+        event: &str,
+        at: Option<[f64; 3]>,
+        volume: (f32, f32),
+        pitch: (f32, f32),
+        scale: f32,
+    ) {
+        let sample = |random: &mut LegacyRandom, (min, max): (f32, f32)| {
+            min + (max - min) * random.next_float()
+        };
+        let volume = sample(&mut self.random, volume) * scale;
+        let pitch = sample(&mut self.random, pitch);
+        self.play(event, at, volume, pitch);
+    }
     /// `play` for this client only: a sound a packet's handler plays
     /// (`playLocalSound`), which the guests play from that packet themselves.
     pub fn play_unshared(&mut self, event: &str, at: Option<[f64; 3]>, volume: f32, pitch: f32) {
@@ -1084,3 +1103,4 @@ mod tests {
         assert_eq!(data, [0.5; 2]);
     }
 }
+

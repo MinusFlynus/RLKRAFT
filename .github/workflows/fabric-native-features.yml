@@ -27,6 +27,8 @@ jobs:
         run: 'cargo +stable test --locked -p horizon-client-render --lib extras::tests::'
       - name: Falling Leaves tuning regression
         run: 'cargo +stable test --locked -p horizon-client-render --lib particles::tests::imported_leaf_tuning_changes_only_leaf_particle_shape_and_lifetime'
+      - name: Presence Footsteps material regression
+        run: 'cargo +stable test --locked -p horizon-client --lib presence_footsteps::tests::'
       - name: Shader pack and settings regressions
         run: cargo +stable test --locked -p horizon-shaders --lib
       - name: Install pinned native mod compiler
@@ -44,3 +46,4 @@ jobs:
             native-profile-provenance.json
             LICENSE
           if-no-files-found: error
+

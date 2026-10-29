@@ -18,6 +18,7 @@ again restores vanilla's behaviour completely.
 | Game glue (input hooks, per-frame update) | `crates/horizon-client/src/game/extras.rs` |
 | Mouse Tweaks-style controls, sort buttons | `crates/horizon-client/src/game/tweaks.rs` |
 | Sort order and its clicks | `crates/horizon-client/src/inv_sort.rs` (pure, unit tested) |
+| Presence Footsteps material mapping | `crates/horizon-client/src/presence_footsteps.rs` (pure mapping, unit tested) |
 | The settings page | `options_ui.rs` (`Page::Extras`): **Options → Horizon Settings... → Extras...** |
 
 The settings are grouped by extra, under a header each, two buttons to a row as
@@ -59,6 +60,21 @@ in Controls, and adding one would put a non-vanilla mapping into `options.txt`.
   lightmap as usual. The light doesn't stop at walls.
 - Off: nothing is gathered and the shaders' loop runs zero times (the count is 0), so it costs
   nothing measurable (numbers in the pull request, #814).
+
+### Presence Footsteps acoustics (`presenceFootsteps`, default off)
+
+- Replaces supported player block-step events with the material acoustics from
+  an installed Presence Footsteps resource pack. The imported profile keeps its
+  70% global volume in `presenceFootstepsVolume`.
+- Volume and pitch are sampled from the mod's acoustic ranges. Grass keeps its
+  simultaneous grass and brush voices; dirt, gravel, sand, snow, mud, wool,
+  wood, metal and common stone groups have native mappings. Unsupported groups
+  fall back to their vanilla step without changing it.
+- The hot path is one flag check, string prefix/suffix checks and a small match;
+  it allocates nothing and performs no block searches. With the switch off it
+  does not touch the sound registry.
+- This is a focused player-step port. Foliage and wet-surface overlays,
+  footwear, biome variance and non-player entity cadence are not implemented.
 
 ### Moved to the mod browser
 
@@ -140,6 +156,8 @@ and the container screen tests are unchanged).
 
 ## Perf budget
 
-Off: a flag check per frame per extra (no allocations, no world access).
+Off: a flag check per frame or emitted player step per extra (no allocations,
+no world access).
 A mod's minimap stays under 0.3 ms of CPU
 per frame (tile budget) plus a 64 KiB texture upload when its image changes.
+
