@@ -18,13 +18,15 @@ jobs:
         run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
       - uses: Swatinem/rust-cache@v2
       - name: Formatting
-        run: cargo +stable fmt -p horizon-client-render -p horizon-client -- --check
+        run: cargo +stable fmt -p horizon-client-render -p horizon-client -p horizon-shaders -- --check
       - name: Lint native renderer and game integration
-        run: cargo +stable clippy --locked -p horizon-client-render -p horizon-client --lib --bins -- -D warnings
+        run: cargo +stable clippy --locked -p horizon-client-render -p horizon-client -p horizon-shaders --lib --bins -- -D warnings
       - name: Chat layout and interaction regressions
         run: 'cargo +stable test --locked -p horizon-client-render --lib chat::tests::'
       - name: Extras settings regressions
         run: 'cargo +stable test --locked -p horizon-client-render --lib extras::tests::'
+      - name: Shader pack and settings regressions
+        run: cargo +stable test --locked -p horizon-shaders --lib
       - name: Build optimized Windows client
         run: cargo +stable build --locked --profile fast -p horizon-client --bin horizon-client --bin horizon-ctl --features horizon-client/mods
       - uses: actions/upload-artifact@v4

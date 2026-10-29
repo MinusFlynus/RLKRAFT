@@ -20,6 +20,7 @@ mod custom;
 mod discover;
 mod lang;
 mod macros;
+mod option_values;
 mod options;
 mod pack;
 mod post;

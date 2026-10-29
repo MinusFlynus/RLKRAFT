@@ -29,6 +29,13 @@ message can retain its fallback skin after a later skin download.
 
 ## Features already implemented in Rust
 
+Shader packs opened from disk now read adjacent `<pack filename>.txt` scalar
+overrides once at load time. Numeric and boolean values replace exact GLSL
+define names or scalar constants without rewriting the original pack. This
+covers the user's five Unbound overrides; it does not establish compatibility
+with every Iris shader stage, profile, expression or rendering feature.
+Tests check archive preservation, language-file isolation and source handling.
+
 Horizon already provides dynamic lights, Mouse Tweaks-style controls,
 inventory sorting with mouse bindings, a minimap and a recipe-viewer API.
 Those are native equivalents, not complete ports of LambDynamicLights,

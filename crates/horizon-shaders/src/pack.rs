@@ -16,6 +16,7 @@ const ROOT: &str = "shaders";
 pub struct Pack {
     name: String,
     files: Files,
+    options: crate::option_values::Values,
 }
 
 enum Files {
@@ -69,7 +70,23 @@ impl Pack {
         } else {
             Self::zip_files(fs::read(path)?)?
         };
-        Ok(Self { name, files })
+        let sidecar = path.with_file_name(format!("{name}.txt"));
+        let options = fs::File::open(sidecar)
+            .ok()
+            .and_then(|file| {
+                let mut bytes = Vec::new();
+                file.take(65537).read_to_end(&mut bytes).ok()?;
+                (bytes.len() <= 65536)
+                    .then(|| String::from_utf8(bytes).ok())
+                    .flatten()
+            })
+            .map(|text| crate::option_values::Values::parse(&text))
+            .unwrap_or_default();
+        Ok(Self {
+            name,
+            files,
+            options,
+        })
     }
 
     /// An archive held in memory; `name` is what [`Pack::name`] returns.
@@ -78,6 +95,7 @@ impl Pack {
         Ok(Self {
             name: name.to_owned(),
             files,
+            options: crate::option_values::Values::default(),
         })
     }
 
@@ -123,7 +141,15 @@ impl Pack {
     pub fn read_text(&self, path: &str) -> Option<String> {
         let bytes = self.read(path)?;
         let text = String::from_utf8_lossy(&bytes);
-        Some(text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned())
+        let text = text.strip_prefix('\u{feff}').unwrap_or(&text).to_owned();
+        let source = path.rsplit_once('.').is_some_and(|(_, ext)| {
+            ["glsl", "vsh", "fsh", "gsh", "csh", "tcs", "tes", "inc"].contains(&ext)
+        });
+        Some(if source {
+            self.options.apply(text)
+        } else {
+            text
+        })
     }
 
     pub fn exists(&self, path: &str) -> bool {
@@ -241,6 +267,39 @@ pub(crate) mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    #[test]
+    fn adjacent_options_affect_compilation_without_rewriting_zip_or_language_files() {
+        let dir = temp_dir("option-sidecar");
+        let path = dir.join("P.zip");
+        let bytes = zip(&[
+            (
+                "shaders/lib/settings.glsl",
+                "#define QUALITY 3\nconst float shadowDistance = 256.0;\n",
+            ),
+            ("shaders/lang/en_us.lang", "#define QUALITY 3\n"),
+        ]);
+        fs::write(&path, &bytes).unwrap();
+        fs::write(dir.join("P.zip.txt"), "QUALITY=1\nshadowDistance=128.0\n").unwrap();
+        let pack = Pack::open(&path).unwrap();
+        assert_eq!(
+            pack.read_text("lib/settings.glsl").unwrap(),
+            "#define QUALITY 1\nconst float shadowDistance = 128.0;\n"
+        );
+        assert_eq!(
+            pack.read_text("lang/en_us.lang").unwrap(),
+            "#define QUALITY 3\n"
+        );
+        assert_eq!(fs::read(&path).unwrap(), bytes);
+        fs::write(dir.join("P.zip.txt"), "QUALITY=2\n").unwrap();
+        assert!(
+            pack.read_text("lib/settings.glsl")
+                .unwrap()
+                .contains("QUALITY 1")
+        );
+        drop(pack);
+        fs::remove_dir_all(dir).unwrap();
     }
 
     #[test]
