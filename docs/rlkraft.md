@@ -45,6 +45,17 @@ byte-for-byte to an `.apk` analysis carrier, following Horizon's existing
 Static observations do not establish runtime behavior. No mod jars,
 decompiled code, Minecraft assets or pack configuration are committed here.
 
+The completed REA/JADX pass inspected all 180 server-pack jar artifacts,
+enumerating 28,363 top-level classes with no failed inventories. The per-jar
+SHA-256, class count and Evidence ID are in
+[the inventory CSV](modpacks/rlcraft-2.9.3-rea.csv). Each empty-query class
+selection returned the engine's full reported class inventory. This is not a
+method-by-method behavior audit; inner/synthetic class coverage follows JADX's
+reported inventory, and the client-only artifacts remain a separate boundary.
+SimpleDifficulty's `ThirstCapability.tickUpdate` was also inspected separately
+(Evidence `ev_15b47fbeb06bfa6b2c6cb400b609383f9c7c4cfdc0b147e0036769f6348f2895`).
+Its behavior is not implemented or runtime-verified on this branch.
+
 ## Validation and remaining work
 
 Formatting and the public-tree check run locally. Compilation on the test PC
