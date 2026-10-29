@@ -162,4 +162,3 @@ mod tests {
         assert!(acoustic("minecraft:entity.player.hurt").is_none());
     }
 }
-

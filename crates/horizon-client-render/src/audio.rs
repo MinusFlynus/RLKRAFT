@@ -1103,4 +1103,3 @@ mod tests {
         assert_eq!(data, [0.5; 2]);
     }
 }
-
