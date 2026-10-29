@@ -1,0 +1,36 @@
+name: RLKRAFT foundation
+on:
+  push:
+    branches: [rlcraft-port-foundation]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust
+        run: rustup toolchain install stable --profile minimal --component rustfmt --component clippy
+      - name: Formatting
+        run: cargo +stable fmt -p horizon-port-pack -- --check
+      - name: Lint importer and shader API
+        run: cargo +stable clippy --locked -p horizon-port-pack -p horizon-shader-api --all-targets -- -D warnings
+      - name: Test importer and shader API
+        run: cargo +stable test --locked -p horizon-port-pack -p horizon-shader-api
+      - name: Validate native shader
+        run: cargo +stable run --locked -p horizon-shader-api --bin horizon-shader -- check shaderpacks/rlkraft_lite --json
+      - name: Package native shader
+        if: runner.os == 'Linux'
+        run: cargo +stable run --locked -p horizon-shader-api --bin horizon-shader -- pack shaderpacks/rlkraft_lite
+      - uses: actions/upload-artifact@v4
+        if: runner.os == 'Linux'
+        with:
+          name: rlkraft-lite-shader
+          path: shaderpacks/*.hshader
+          if-no-files-found: error

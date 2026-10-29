@@ -1,0 +1,43 @@
+schema = 1
+id = "rlkraft_lite"
+name = "RLKRAFT Lite"
+version = "0.1.0"
+api = "0.1"
+description = "A single colour pass for RLKRAFT: gentle contrast, saturation and warmth. No extra texture reads, blur, shadows or temporal history."
+authors = ["MinusFlynus", "OpenAI Codex"]
+license = "MIT"
+
+[[post]]
+file = "grade.wgsl"
+name = "Lite colour grade"
+
+[[options]]
+id = "saturation"
+name = "Saturation"
+type = "float"
+default = 1.08
+min = 0.0
+max = 1.5
+step = 0.02
+
+[[options]]
+id = "contrast"
+name = "Contrast"
+type = "float"
+default = 1.03
+min = 0.8
+max = 1.2
+step = 0.01
+
+[[options]]
+id = "warmth"
+name = "Warmth"
+type = "float"
+default = 0.02
+min = 0.0
+max = 0.1
+step = 0.01
+
+[budget]
+# Target only; actual frame time must be measured on the player's GPU.
+gpu_ms = 0.5
