@@ -11,6 +11,7 @@ from pathlib import Path
 import re
 import shutil
 import subprocess
+import tarfile
 import tempfile
 import urllib.request
 import zipfile
@@ -35,6 +36,17 @@ def main():
         scratch = Path(scratch)
         mods = scratch / "mods"
         mods.mkdir()
+        # The official launcher also omits links from its source archive.
+        # horizon-mixins deliberately refuses them (CLAUDE.md is a repo link).
+        inputs = scratch / "source"
+        source_archive = subprocess.check_output(["git", "archive", "HEAD"], cwd=root)
+        with tarfile.open(fileobj=io.BytesIO(source_archive)) as archive:
+            archive.extractall(
+                inputs,
+                members=(m for m in archive.getmembers() if m.isfile() or m.isdir()),
+                filter="data",
+            )
+        (inputs / ".horizon-revision").write_text(revision)
         for name, digest in BUNDLES.items():
             url = (
                 "https://github.com/horizon-rust/horizon-mods/releases/download/"
@@ -62,11 +74,17 @@ def main():
                 )
                 assert count == 1, name
                 path.write_text(text)
+                runtime = target / "runtime.rs"
+                test_binary = scratch / f"{name}-tests.exe"
+                subprocess.run([
+                    "rustc", "--edition=2024", "--test", str(runtime),
+                    "-o", str(test_binary),
+                ], check=True)
+                subprocess.run([str(test_binary)], check=True)
             provenance["bundles"].append({"id": name, "sha256": digest, "url": url})
-        (root / ".horizon-revision").write_text(revision)
         stage = scratch / "staged"
         subprocess.run([
-            "horizon-mixins", "apply", "--workspace", str(root),
+            "horizon-mixins", "apply", "--workspace", str(inputs),
             "--mods", str(mods), "--out", str(stage),
         ], check=True, cwd=root)
         changed = []

@@ -40,4 +40,5 @@ jobs:
             target/fast/horizon-client.exe
             target/fast/horizon-ctl.exe
             native-profile-provenance.json
+            LICENSE
           if-no-files-found: error
