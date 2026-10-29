@@ -1,4 +1,6 @@
 //! Cloud visibility and flat/fancy cell geometry (`CloudRenderer`).
+/// World-space base height, also exposed to shader packs as `cloudHeight`.
+pub const HEIGHT: f32 = 192.0;
 /// `LevelRenderer`: skip OFF clouds and colors with no packed alpha.
 pub fn visible(mode: &str, alpha: f32) -> bool {
     mode != "false" && (alpha.clamp(0.0, 1.0) * 255.0) as u8 > 0
@@ -110,7 +112,7 @@ impl Input<'_> {
         z -= (z / th).floor() * th;
         let cell_x = (x / 12.0).floor() as i64;
         let cell_z = (z / 12.0).floor() as i64;
-        let bottom = (192.33 - self.camera.y) as f32;
+        let bottom = (f64::from(HEIGHT) + 0.33 - self.camera.y) as f32;
         let key = MeshKey {
             cell_x,
             cell_z,
