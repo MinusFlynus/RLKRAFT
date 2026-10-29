@@ -27,12 +27,17 @@ jobs:
         run: 'cargo +stable test --locked -p horizon-client-render --lib extras::tests::'
       - name: Shader pack and settings regressions
         run: cargo +stable test --locked -p horizon-shaders --lib
+      - name: Install pinned native mod compiler
+        run: cargo +stable install --locked --git https://github.com/horizon-rust/horizon-mixins --rev 0d6b103c70633d8fd9443d8d0acd3aadaacedb06 horizon-mixins-cli
+      - name: Integrate official native minimap and recipe viewer
+        run: python tools/fabric_native_bundles.py
       - name: Build optimized Windows client
-        run: cargo +stable build --locked --profile fast -p horizon-client --bin horizon-client --bin horizon-ctl --features horizon-client/mods
+        run: cargo +stable build --locked --profile fast -p horizon-client --bin horizon-client --bin horizon-ctl
       - uses: actions/upload-artifact@v4
         with:
           name: horizon-native-profile-windows
           path: |
             target/fast/horizon-client.exe
             target/fast/horizon-ctl.exe
+            native-profile-provenance.json
           if-no-files-found: error
