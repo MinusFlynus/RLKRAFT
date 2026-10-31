@@ -27,13 +27,38 @@ pub(super) struct Run {
     pub tag: [u32; 3],
 }
 
-#[derive(Default)]
 pub(super) struct PageRuns {
+    band: f64,
     runs: Vec<Run>,
     scratch: Vec<([u32; 5], (u32, Option<u32>))>,
 }
 
+impl Default for PageRuns {
+    fn default() -> Self {
+        Self {
+            band: BAND,
+            runs: Vec::new(),
+            scratch: Vec::new(),
+        }
+    }
+}
+
 impl PageRuns {
+    /// Camera-solid draws can trade a few more page switches for tighter
+    /// front-to-back ordering. Shadow and translucent ordering keep their
+    /// existing policy. The override is for matched GPU benchmarks.
+    pub fn for_terrain() -> Self {
+        let band = std::env::var("HORIZON_TERRAIN_DISTANCE_BAND")
+            .ok()
+            .and_then(|s| s.parse::<u32>().ok())
+            .filter(|n| [8, 16, 32, 64].contains(n))
+            .unwrap_or(16);
+        Self {
+            band: f64::from(band),
+            ..Self::default()
+        }
+    }
+
     pub fn clear(&mut self) {
         self.runs.clear();
     }
@@ -42,7 +67,7 @@ impl PageRuns {
     /// camera (squared, as bits) in arena `page`; runs come nearest first.
     pub fn push(&mut self, distance: u64, page: u32, start: usize, len: usize, tag: [u32; 3]) {
         if len > 0 {
-            let band = (f64::from_bits(distance).sqrt() / BAND) as u64;
+            let band = (f64::from_bits(distance).sqrt() / self.band) as u64;
             self.runs.push(Run {
                 key: band << 32 | u64::from(page),
                 start: start as u32,
@@ -155,6 +180,43 @@ mod tests {
         grouped.regroup(&mut draws, &mut pages, 0);
         let order: Vec<_> = draws.iter().map(|d| d[0]).collect();
         assert_eq!(order, [0, 1, 2]);
+    }
+
+    #[test]
+    fn narrow_bands_preserve_draws_pages_and_culling_tags() {
+        for band in [8.0, 16.0, 32.0, 64.0] {
+            let mut grouped = PageRuns {
+                band,
+                ..PageRuns::default()
+            };
+            let mut draws = vec![[99; 5]];
+            let mut pages = vec![(9, None)];
+            for (i, distance) in [4.0, 20.0, 36.0, 52.0, 68.0].into_iter().enumerate() {
+                let page = (i % 2) as u32;
+                grouped.push(
+                    bits(distance),
+                    page,
+                    draws.len(),
+                    1,
+                    [i as u32, 100 + i as u32, 6],
+                );
+                draws.push([i as u32, 1, 0, 200 + i as u32, i as u32]);
+                pages.push((page, None));
+            }
+            let before = draws.clone();
+            let runs = grouped.regroup(&mut draws, &mut pages, 1);
+            assert_eq!(draws[0], [99; 5]);
+            for run in runs {
+                let i = run.tag[0] as usize;
+                assert_eq!(run.tag, [i as u32, 100 + i as u32, 6]);
+                assert_eq!(draws[run.start as usize], before[i + 1]);
+                assert_eq!(pages[run.start as usize], ((i % 2) as u32, None));
+            }
+            assert_eq!(runs.len(), 5);
+            if band <= 16.0 {
+                assert_eq!(draws, before, "separate bands retain nearest-first order");
+            }
+        }
     }
 
     #[test]
