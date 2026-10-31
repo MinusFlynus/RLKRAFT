@@ -80,6 +80,7 @@ mod native_post;
 mod native_sky;
 mod occlusion;
 mod pack_atlas;
+mod pack_depth;
 pub mod pack_draw;
 mod pack_entities;
 mod pack_hand;
@@ -2843,6 +2844,14 @@ impl Renderer {
     /// Whether sections are drawn as one index list per frame (`flat`).
     pub fn flat_draws(&self) -> bool {
         self.flat_on
+    }
+    /// A/B control for a compatible shader pack's depth-only terrain pass.
+    pub fn set_pack_depth_prepass(&mut self, on: bool) -> Result<bool> {
+        self.pack_post
+            .as_mut()
+            .and_then(|p| p.1.as_mut())
+            .ok_or("no shader pack is active")?
+            .set_depth_prepass(on)
     }
     /// Switches between flat and per-section draws, for A/B checks.
     pub fn set_flat_draws(&mut self, on: bool) -> Result<()> {

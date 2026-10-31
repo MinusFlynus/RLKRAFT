@@ -52,7 +52,7 @@ impl PageRuns {
             .ok()
             .and_then(|s| s.parse::<u32>().ok())
             .filter(|n| [8, 16, 32, 64].contains(n))
-            .unwrap_or(16);
+            .unwrap_or(64);
         Self {
             band: f64::from(band),
             ..Self::default()

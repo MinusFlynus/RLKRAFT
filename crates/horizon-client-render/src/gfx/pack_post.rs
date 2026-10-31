@@ -165,6 +165,7 @@ struct Pass {
     name: String,
     group: Group,
     pipeline: wgpu::RenderPipeline,
+    depth_pipeline: Option<wgpu::RenderPipeline>,
     layout: wgpu::BindGroupLayout,
     ubo: wgpu::Buffer,
     block: Vec<u8>,
@@ -254,6 +255,7 @@ pub(super) struct Weather {
 
 pub struct PackPost {
     pub notes: Vec<String>,
+    depth_prepass: bool,
     passes: Vec<Pass>,
     /// What draws terrain (`gbuffers_terrain` or its fallback), between `prepare` and `deferred`.
     terrain: Option<Pass>,
@@ -857,6 +859,12 @@ fn build_pass(
     } else {
         (written & !kept) | mask(&p.flips)
     };
+    let depth_fragment = (p.name == "gbuffers_terrain"
+        && p.group == Group::Gbuffers
+        && p.blend.is_none()
+        && geometry.is_some_and(|g| g.depth_write))
+    .then(|| super::pack_depth::program(&p.program.fragment))
+    .flatten();
     let created = checked(device, || {
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some(&p.name),
@@ -912,9 +920,51 @@ fn build_pass(
             multiview_mask: None,
             cache: None,
         });
-        (layout, pipeline)
+        let depth_pipeline = depth_fragment.and_then(|fragment| {
+            let fs = module(fragment);
+            match checked(device, || {
+                device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                    label: Some("Shader terrain depth prepass"),
+                    layout: Some(&pipeline_layout),
+                    vertex: wgpu::VertexState {
+                        module: &vs,
+                        entry_point: Some("main"),
+                        compilation_options: Default::default(),
+                        buffers: geometry.map_or(&[], |g| g.buffers),
+                    },
+                    primitive: wgpu::PrimitiveState {
+                        front_face: wgpu::FrontFace::Cw,
+                        cull_mode: geometry.filter(|g| g.cull).map(|_| wgpu::Face::Back),
+                        ..Default::default()
+                    },
+                    depth_stencil: Some(wgpu::DepthStencilState {
+                        format: wgpu::TextureFormat::Depth32Float,
+                        depth_write_enabled: Some(true),
+                        depth_compare: Some(wgpu::CompareFunction::LessEqual),
+                        stencil: Default::default(),
+                        bias: Default::default(),
+                    }),
+                    multisample: Default::default(),
+                    fragment: Some(wgpu::FragmentState {
+                        module: &fs,
+                        entry_point: Some("main"),
+                        compilation_options: Default::default(),
+                        targets: &[],
+                    }),
+                    multiview_mask: None,
+                    cache: None,
+                })
+            }) {
+                Ok(pipeline) => Some(pipeline),
+                Err(error) => {
+                    notes.push(format!("terrain depth prepass unavailable: {error}"));
+                    None
+                }
+            }
+        });
+        (layout, pipeline, depth_pipeline)
     });
-    let (layout, pipeline) = match created {
+    let (layout, pipeline, depth_pipeline) = match created {
         Ok(created) => created,
         Err(e) => {
             notes.push(format!("{}: skipped: {e}", p.name));
@@ -947,6 +997,7 @@ fn build_pass(
         name: p.name,
         group: p.group,
         pipeline,
+        depth_pipeline,
         layout,
         samplers,
         writes,
@@ -1407,6 +1458,7 @@ impl PackPost {
         let white = [255u8; 4];
         Self {
             notes,
+            depth_prepass: std::env::var("HORIZON_SHADER_DEPTH_PREPASS").as_deref() == Ok("1"),
             passes,
             terrain,
             water,
@@ -1702,6 +1754,39 @@ impl PackPost {
             );
         }
         let group = self.bind(device, queue, &mut pass, size);
+        if list == TerrainList::Solid
+            && self.depth_prepass
+            && let Some(pipeline) = &pass.depth_pipeline
+        {
+            let targets = self.targets.as_ref().expect("resized");
+            let timestamp_writes = self
+                .timing
+                .as_mut()
+                .and_then(|t| t.writes("terrain depth prepass"));
+            let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Shader terrain depth prepass"),
+                color_attachments: &[],
+                timestamp_writes,
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &targets.depth,
+                    depth_ops: Some(super::pack_shadow::load()),
+                    stencil_ops: None,
+                }),
+                ..Default::default()
+            });
+            rp.set_pipeline(pipeline);
+            rp.set_bind_group(0, &group, &[]);
+            if pass.draw {
+                self.draws.bind(&mut rp, "TERRAIN_SOLID");
+            }
+            let (groups, ids) = (&self.page_groups, pass.ids);
+            let page = |rp: &mut wgpu::RenderPass<'_>, page: u32| {
+                if let Some((_, group)) = groups.get(&page).filter(|_| ids) {
+                    rp.set_bind_group(3, group, &[]);
+                }
+            };
+            draw(&mut rp, list, &page);
+        }
         {
             let mut rp = self.begin(encoder, &pass);
             rp.set_pipeline(&pass.pipeline);
@@ -2140,6 +2225,18 @@ impl PackPost {
     /// Whether the pack draws terrain itself.
     pub fn has_terrain(&self) -> bool {
         self.terrain.is_some()
+    }
+    pub fn set_depth_prepass(&mut self, on: bool) -> crate::Result<bool> {
+        if on
+            && self
+                .terrain
+                .as_ref()
+                .is_none_or(|p| p.depth_pipeline.is_none())
+        {
+            return Err("shader terrain is not compatible with the depth prepass".into());
+        }
+        self.depth_prepass = on;
+        Ok(on)
     }
 
     /// Whether the pack draws the sky (disc, sunset, stars, void) itself.
