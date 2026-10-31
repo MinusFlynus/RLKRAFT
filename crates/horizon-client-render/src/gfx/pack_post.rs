@@ -887,7 +887,10 @@ fn build_pass(
                 source: wgpu::ShaderSource::Naga(std::borrow::Cow::Owned(m)),
             })
         };
-        let (vs, fs) = (module(p.program.vertex), module(p.program.fragment));
+        let mut vertex = p.program.vertex;
+        let depth_fragment =
+            depth_fragment.filter(|_| super::pack_depth::invariant_vertex(&mut vertex));
+        let (vs, fs) = (module(vertex), module(p.program.fragment));
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some(&p.name),
             layout: Some(&pipeline_layout),

@@ -22,6 +22,9 @@ pub(super) fn program(original: &Module) -> Option<Module> {
         .entry_points
         .iter()
         .position(|e| e.stage == ShaderStage::Fragment)?;
+    if original.entry_points[index].early_depth_test.is_some() {
+        return None;
+    }
     let result = original.entry_points[index].function.result.as_ref()?;
     let colours_only = match &result.binding {
         Some(Binding::Location { .. }) => true,
@@ -42,6 +45,42 @@ pub(super) fn program(original: &Module) -> Option<Module> {
     function.result = None;
     strip_returns(&mut function.body);
     Some(module)
+}
+
+/// Both pipelines need invariant positions: a depth-only compiler must not
+/// round clip positions differently after eliminating unused varyings.
+pub(super) fn invariant_vertex(module: &mut Module) -> bool {
+    let Some(result) = module
+        .entry_points
+        .iter_mut()
+        .find(|e| e.stage == ShaderStage::Vertex)
+        .and_then(|e| e.function.result.as_mut())
+    else {
+        return false;
+    };
+    if let Some(Binding::BuiltIn(naga::BuiltIn::Position { invariant })) = &mut result.binding {
+        *invariant = true;
+        return true;
+    }
+    let mut ty = module.types[result.ty].clone();
+    let TypeInner::Struct { members, .. } = &mut ty.inner else {
+        return false;
+    };
+    let mut found = false;
+    for member in members {
+        if let Some(Binding::BuiltIn(naga::BuiltIn::Position { invariant })) = &mut member.binding {
+            *invariant = true;
+            found = true;
+        }
+    }
+    if !found {
+        return false;
+    }
+    if let Some(existing) = module.types.get(&ty) {
+        return existing == result.ty;
+    }
+    module.types.replace(result.ty, ty);
+    true
 }
 
 fn strip_returns(block: &mut Block) {
@@ -107,6 +146,33 @@ mod tests {
             let original = naga::front::wgsl::parse_str(text).unwrap();
             assert!(program(&original).is_none());
         }
+        let mut early = naga::front::wgsl::parse_str(
+            "@fragment fn fs() -> @location(0) vec4<f32> { return vec4<f32>(1.0); }",
+        )
+        .unwrap();
+        early.entry_points[0].early_depth_test = Some(naga::EarlyDepthTest::Force);
+        assert!(program(&early).is_none());
+    }
+
+    #[test]
+    fn invariant_vertex_positions_remain_valid_shader_interfaces() {
+        for text in [
+            "@vertex fn vs() -> @builtin(position) vec4<f32> { return vec4<f32>(0.0,0.0,0.5,1.0); }",
+            "struct Out { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> } @vertex fn vs() -> Out { return Out(vec4<f32>(0.0,0.0,0.5,1.0), vec2<f32>(0.5)); }",
+        ] {
+            let mut vertex = naga::front::wgsl::parse_str(text).unwrap();
+            assert!(invariant_vertex(&mut vertex));
+            naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::all(),
+            )
+            .validate(&vertex)
+            .unwrap();
+            assert!(
+                invariant_vertex(&mut vertex),
+                "idempotent position invariant"
+            );
+        }
     }
 
     #[test]
@@ -131,6 +197,21 @@ struct Varying { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, 
 }"#;
         let original = naga::front::wgsl::parse_str(source).unwrap();
         let depth = program(&original).unwrap();
+        let mut vertex = original.clone();
+        vertex
+            .entry_points
+            .retain(|e| e.stage == ShaderStage::Vertex);
+        assert!(invariant_vertex(&mut vertex));
+        naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&vertex)
+        .unwrap();
+        let vertex = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: None,
+            source: wgpu::ShaderSource::Naga(std::borrow::Cow::Owned(vertex)),
+        });
         let main = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: None,
             source: wgpu::ShaderSource::Naga(std::borrow::Cow::Owned(original)),
@@ -149,7 +230,7 @@ struct Varying { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32>, 
                 label: None,
                 layout: None,
                 vertex: wgpu::VertexState {
-                    module: &main,
+                    module: &vertex,
                     entry_point: Some("vs"),
                     compilation_options: Default::default(),
                     buffers: &[],
