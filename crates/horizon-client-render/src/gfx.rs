@@ -80,7 +80,6 @@ mod native_post;
 mod native_sky;
 mod occlusion;
 mod pack_atlas;
-mod pack_depth;
 pub mod pack_draw;
 mod pack_entities;
 mod pack_hand;
@@ -2641,8 +2640,8 @@ impl Renderer {
             draw_pages: Vec::new(),
             phase2_draws: Vec::new(),
             phase2_pages: Vec::new(),
-            solid_runs: page_runs::PageRuns::for_terrain(),
-            phase2_runs: page_runs::PageRuns::for_terrain(),
+            solid_runs: page_runs::PageRuns::default(),
+            phase2_runs: page_runs::PageRuns::default(),
             shadow_runs: page_runs::PageRuns::default(),
             block_entities: Default::default(),
             block_entity_revision: next_block_entity_revision(),
@@ -2844,14 +2843,6 @@ impl Renderer {
     /// Whether sections are drawn as one index list per frame (`flat`).
     pub fn flat_draws(&self) -> bool {
         self.flat_on
-    }
-    /// A/B control for a compatible shader pack's depth-only terrain pass.
-    pub fn set_pack_depth_prepass(&mut self, on: bool) -> Result<bool> {
-        self.pack_post
-            .as_mut()
-            .and_then(|p| p.1.as_mut())
-            .ok_or("no shader pack is active")?
-            .set_depth_prepass(on)
     }
     /// Switches between flat and per-section draws, for A/B checks.
     pub fn set_flat_draws(&mut self, on: bool) -> Result<()> {

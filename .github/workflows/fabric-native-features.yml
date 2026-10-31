@@ -28,10 +28,8 @@ jobs:
         run: 'cargo +stable test --locked -p horizon-client-render --lib chat::tests::'
       - name: Extras settings regressions
         run: 'cargo +stable test --locked -p horizon-client-render --lib extras::tests::'
-      - name: Terrain draw ordering regressions
-        run: 'cargo +stable test --locked -p horizon-client-render --lib gfx::page_runs::tests::'
-      - name: Shader depth prepass correctness
-        run: 'cargo +stable test --locked -p horizon-client-render --lib gfx::pack_depth::tests::'
+      - name: Opaque plane ordering and culling regressions
+        run: 'cargo +stable test --locked -p horizon-client-render --lib mesher::sides::tests::'
       - name: Falling Leaves tuning regression
         run: 'cargo +stable test --locked -p horizon-client-render --lib particles::tests::imported_leaf_tuning_changes_only_leaf_particle_shape_and_lifetime'
       - name: Presence Footsteps material regression

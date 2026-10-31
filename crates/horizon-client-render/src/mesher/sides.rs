@@ -13,8 +13,8 @@
 //!
 //! The buckets lie one after another in the mesh, in an order chosen so that
 //! the buckets an eye can see are usually one or two runs of quads: one draw
-//! each. Inside a bucket quads keep their model order, so coplanar quads
-//! facing one way (an overlay on its base) still draw in that order.
+//! each. Axis-facing planes draw nearest first from their visible side.
+//! Quads on one plane keep model order, preserving overlays on their base.
 use super::TerrainVertex;
 
 /// The buckets in mesh order: +X, +Z, other, +Y, -Z, -X, -Y. Seen from
@@ -131,8 +131,16 @@ fn bucket(quad: &[TerrainVertex; 4]) -> usize {
     OTHER
 }
 
-/// Reorders `solid`'s quads by bucket, keeping their order inside each.
+/// Reorders solid quads by bucket, then by plane depth. Coplanar quads
+/// and the non-axis-aligned bucket retain model order.
 pub fn sort(solid: &mut Vec<TerrainVertex>) -> Sides {
+    static NEAR_FIRST: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let near_first =
+        *NEAR_FIRST.get_or_init(|| std::env::var("HORIZON_FACE_DEPTH_ORDER").as_deref() != Ok("0"));
+    sort_with_order(solid, near_first)
+}
+
+fn sort_with_order(solid: &mut Vec<TerrainVertex>, near_first: bool) -> Sides {
     let (quads, rest) = solid.as_chunks::<4>();
     debug_assert!(rest.is_empty(), "solid vertices come in quads");
     let buckets: Vec<u8> = quads.iter().map(|q| bucket(q) as u8).collect();
@@ -165,6 +173,30 @@ pub fn sort(solid: &mut Vec<TerrainVertex>) -> Sides {
             *slot += 1;
         }
         *solid = sorted.into_flattened();
+    }
+    if near_first {
+        let (quads, _) = solid.as_chunks_mut::<4>();
+        let mut first = 0;
+        for (bucket, end) in BUCKETS.iter().zip(ends) {
+            let end = end as usize;
+            if let Bucket::Side(axis, positive) = *bucket {
+                let compare = |a: &[TerrainVertex; 4], b: &[TerrainVertex; 4]| {
+                    // Numeric equality keeps +0 and -0 coplanar, too.
+                    let order = a[0].pos[axis]
+                        .partial_cmp(&b[0].pos[axis])
+                        .unwrap_or(std::cmp::Ordering::Equal);
+                    if positive { order.reverse() } else { order }
+                };
+                let slice = &mut quads[first..end];
+                if !slice
+                    .windows(2)
+                    .all(|w| compare(&w[0], &w[1]) != std::cmp::Ordering::Greater)
+                {
+                    slice.sort_by(compare);
+                }
+            }
+            first = end;
+        }
     }
     Sides { ends, planes }
 }
@@ -318,6 +350,48 @@ mod tests {
         assert_eq!(sides.quads(), 9);
         assert_eq!(runs(&sides, [-100.0; 3]), [(0, 9)]);
         assert!(runs(&Sides::unsorted(0), [0.0; 3]).is_empty());
+    }
+
+    #[test]
+    fn planes_draw_near_first_and_coplanar_overlays_keep_model_order() {
+        let mut solid = cube([0.0; 3], 0);
+        solid.extend(cube([4.0; 3], 1));
+        solid.extend(cube([4.0; 3], 2));
+        let mut baseline = solid.clone();
+        let original = sort_with_order(&mut baseline, false);
+        let sides = sort_with_order(&mut solid, true);
+        assert_eq!(sides.ends, original.ends);
+        assert_eq!(sides.planes, original.planes);
+        let (quads, _) = solid.as_chunks::<4>();
+        let mut first = 0;
+        for (bucket, end) in BUCKETS.iter().zip(sides.ends) {
+            let end = end as usize;
+            if let Bucket::Side(_, positive) = *bucket {
+                let layers: Vec<_> = quads[first..end].iter().map(|q| q[0].layer).collect();
+                assert_eq!(
+                    layers,
+                    if positive {
+                        vec![1, 2, 0]
+                    } else {
+                        vec![0, 1, 2]
+                    }
+                );
+            }
+            first = end;
+        }
+        let mut before: Vec<_> = baseline
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|q| (q[0].layer, q[0].pos.map(f32::to_bits)))
+            .collect();
+        let mut after: Vec<_> = quads
+            .iter()
+            .map(|q| (q[0].layer, q[0].pos.map(f32::to_bits)))
+            .collect();
+        before.sort();
+        after.sort();
+        assert_eq!(after, before, "every quad and its material is retained");
     }
 
     #[test]

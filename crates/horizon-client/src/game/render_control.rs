@@ -12,7 +12,6 @@ pub const HELP: &[&str] = &[
     "particle NAME X Y Z [DX DY DZ] [COUNT]  spawn particles (vanilla /particle spread)",
     "signedit X Y Z [front|back]    open the sign editor for the sign at X Y Z",
     "section-draws [flat|indirect]  how terrain sections are drawn (A/B checks); replies the mode",
-    "section-depth-prepass on|off   compatible shader terrain depth pass (A/B checks)",
     "section-cull [on|off]          occlusion culling of solid sections (A/B checks); replies the mode",
     "section-sides [on|off]         leave out solid quads facing away from the eye (A/B checks); replies the mode",
 ];

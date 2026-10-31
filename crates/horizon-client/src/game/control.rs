@@ -209,19 +209,6 @@ impl Game<'_> {
                 .chain(super::pad::HELP)
                 .collect::<Vec<_>>() }))),
             "setblock" | "fill" | "particle" | "signedit" => self.render_command(&words),
-            "section-depth-prepass" => {
-                let on = match words.get(1).copied() {
-                    Some("on") => true,
-                    Some("off") => false,
-                    _ => return Err("usage: section-depth-prepass on|off".into()),
-                };
-                let on = self
-                    .renderer
-                    .as_mut()
-                    .ok_or("no renderer")?
-                    .set_pack_depth_prepass(on)?;
-                Ok(Some(json!({ "ok": true, "enabled": on })))
-            }
             "section-draws" => {
                 let r = self.renderer.as_mut().ok_or("no renderer")?;
                 match words.get(1).copied() {
