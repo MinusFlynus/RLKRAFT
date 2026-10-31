@@ -35,15 +35,14 @@ jobs:
         run: cargo +stable install --locked --git https://github.com/horizon-rust/horizon-mixins --rev 0d6b103c70633d8fd9443d8d0acd3aadaacedb06 horizon-mixins-cli
       - name: Integrate official native minimap and recipe viewer
         run: python tools/fabric_native_bundles.py
-      - name: Build optimized Windows client
-        run: cargo +stable build --locked --profile fast -p horizon-client --bin horizon-client --bin horizon-ctl
+      - name: Build release Windows client with cross-crate optimization
+        run: cargo +stable build --locked --release -p horizon-client --bin horizon-client --bin horizon-ctl
       - uses: actions/upload-artifact@v4
         with:
           name: horizon-native-profile-windows
           path: |
-            target/fast/horizon-client.exe
-            target/fast/horizon-ctl.exe
+            target/release/horizon-client.exe
+            target/release/horizon-ctl.exe
             native-profile-provenance.json
             LICENSE
           if-no-files-found: error
-
