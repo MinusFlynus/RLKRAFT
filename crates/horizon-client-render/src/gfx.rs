@@ -86,7 +86,6 @@ mod pack_hand;
 mod pack_post;
 mod pack_shadow;
 mod pack_sky;
-mod pack_specialize;
 mod pack_timing;
 pub mod pack_uniforms;
 mod pack_weather;

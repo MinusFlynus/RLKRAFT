@@ -714,16 +714,6 @@ fn build_pass(
     let mask = |flips: &[(u32, bool)]| flips.iter().filter(|f| f.1).fold(0u16, |m, f| m | 1 << f.0);
     let interface = &p.program.interface;
     let draw = interface.draw;
-    let zero_offsets = if std::env::var("HORIZON_PACK_ZERO_SPECIALIZE").as_deref() == Ok("0") {
-        Default::default()
-    } else {
-        interface
-            .uniforms
-            .iter()
-            .filter(|u| !u.name.starts_with("hz_") && index(&u.name).is_none())
-            .map(|u| u.offset)
-            .collect()
-    };
     let mut entries = vec![entry(
         0,
         wgpu::BindingType::Buffer {
@@ -884,12 +874,6 @@ fn build_pass(
         });
         let module = |mut m: naga::Module| {
             share_samplers(&mut m, &slots);
-            if let Err(error) = super::pack_specialize::zero_fallbacks(&mut m, &zero_offsets) {
-                log::warn!(
-                    "{}: keeping original shader after zero-fallback specialization: {error}",
-                    p.name
-                );
-            }
             device.create_shader_module(wgpu::ShaderModuleDescriptor {
                 label: Some(&p.name),
                 source: wgpu::ShaderSource::Naga(std::borrow::Cow::Owned(m)),
