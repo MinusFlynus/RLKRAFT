@@ -18,7 +18,7 @@
 //! Composite-style programs draw one quad from (0,0) to (1,1) with an identity model-view and an
 //! orthographic projection onto it, the texture coordinate equal to the position (OQ-6).
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 use std::fmt::Write;
 
 use naga::ShaderStage;
@@ -72,9 +72,6 @@ pub struct Sampler {
     /// The type the pack declared: `sampler2D`, `sampler2DShadow`, `usampler2D`, `sampler3D`...
     pub ty: String,
     pub binding: u32,
-    /// Referenced by a reachable entry point in either stage. Declarations
-    /// alone must not require runtime textures, copies or attachments.
-    pub used: bool,
 }
 
 /// A program that failed, at a pack file and line.
@@ -252,14 +249,13 @@ fn translate(
             }
         }
     }
-    let mut samplers: Vec<Sampler> = samplers
+    let samplers: Vec<Sampler> = samplers
         .into_iter()
         .enumerate()
         .map(|(i, (name, ty))| Sampler {
             name,
             ty,
             binding: 1 + 2 * i as u32,
-            used: false,
         })
         .collect();
 
@@ -435,33 +431,10 @@ fn translate(
     }
     let vertex_module = compile(&v, &v_text, header(&v).lines().count());
     let fragment_module = compile(&f, &f_text, header(&f).lines().count());
-    let ((vertex, vertex_info), (fragment, fragment_info)) = match (vertex_module, fragment_module)
-    {
+    let (vertex, fragment) = match (vertex_module, fragment_module) {
         (Ok(v), Ok(f)) => (v, f),
         (a, b) => return Err(a.err().into_iter().chain(b.err()).flatten().collect()),
     };
-    // Reuse validation's call-graph analysis rather than validating again or
-    // rewriting shader instructions. Texture queries are dependencies too.
-    let bindings = |module: &naga::Module, info: &naga::valid::ModuleInfo| -> BTreeSet<u32> {
-        module
-            .global_variables
-            .iter()
-            .filter_map(|(h, g)| {
-                let binding = g.binding.as_ref().filter(|b| b.group == 0)?;
-                module
-                    .entry_points
-                    .iter()
-                    .enumerate()
-                    .any(|(i, _)| !info.get_entry_point(i)[h].is_empty())
-                    .then_some(binding.binding)
-            })
-            .collect()
-    };
-    let mut used = bindings(&vertex, &vertex_info);
-    used.extend(bindings(&fragment, &fragment_info));
-    for sampler in &mut samplers {
-        sampler.used = used.contains(&sampler.binding) || used.contains(&(sampler.binding + 1));
-    }
     let (uniform_size, offsets) = block_layout(&fragment);
     let uniforms = offsets
         .into_iter()
@@ -548,11 +521,7 @@ pub(super) fn split_sampler(ty: &str) -> (String, &'static str) {
 }
 
 /// Parses and validates one stage; errors at the pack's files and lines.
-fn compile(
-    stage: &Stage,
-    text: &str,
-    header_lines: usize,
-) -> Result<(naga::Module, naga::valid::ModuleInfo), Vec<Error>> {
+fn compile(stage: &Stage, text: &str, header_lines: usize) -> Result<naga::Module, Vec<Error>> {
     let at = |span: naga::Span, message: String| {
         let start = span.to_range().map_or(0, |r| r.start);
         let line = text[..start.min(text.len())].matches('\n').count();
@@ -585,7 +554,7 @@ fn compile(
                 .map(|e| at(e.meta, e.kind.to_string()))
                 .collect::<Vec<_>>()
         })?;
-    let info = Validator::new(ValidationFlags::all(), Capabilities::all())
+    Validator::new(ValidationFlags::all(), Capabilities::all())
         .validate(&module)
         .map_err(|e| {
             let span = e.spans().next().map_or(naga::Span::default(), |(s, _)| *s);
@@ -599,7 +568,7 @@ fn compile(
             }
             vec![at(span, message)]
         })?;
-    Ok((module, info))
+    Ok(module)
 }
 
 /// The uniform block's size and member offsets, from naga's layout.
@@ -628,55 +597,6 @@ mod tests {
     use super::*;
     use crate::pack::tests::zip;
     use crate::{Macros, Pack, preprocess};
-
-    #[test]
-    fn sampler_liveness_includes_both_stages_queries_and_dynamic_branches() {
-        let vertex = "#version 120
-            uniform sampler2D colortex1;
-            uniform sampler2D colortex2;
-            void main() { gl_Position=ftransform()+vec4(textureLod(colortex1,vec2(0.5),0.0).r*0.001); }";
-        let fragment = "#version 120
-            uniform sampler2D colortex0;
-            uniform sampler2D colortex3;
-            uniform sampler2D colortex4;
-            uniform sampler2D colortex9;
-            uniform sampler2D watershadow;
-            uniform int frameCounter;
-            vec4 neverCalled() { return texture2D(colortex9,vec2(0.5)); }
-            void main() {
-                vec4 c=texture2D(colortex0,vec2(0.5));
-                c.xy+=vec2(textureSize(colortex3,0))*0.00001;
-                if(frameCounter>0) c+=texture2D(colortex4,vec2(0.5));
-                gl_FragColor=c;
-            }";
-        let p = program(
-            &[("composite.vsh", vertex), ("composite.fsh", fragment)],
-            Target::Buffers,
-        )
-        .unwrap();
-        let flags: Vec<_> = p
-            .interface
-            .samplers
-            .iter()
-            .map(|s| (s.name.as_str(), s.used))
-            .collect();
-        assert_eq!(
-            flags,
-            [
-                ("colortex0", true),
-                ("colortex1", true),
-                ("colortex2", false),
-                ("colortex3", true),
-                ("colortex4", true),
-                ("colortex9", false),
-                ("watershadow", false)
-            ]
-        );
-        // Keep original declaration binding numbers: pruning is metadata,
-        // not an instruction or interface-location rewrite.
-        let bindings: Vec<_> = p.interface.samplers.iter().map(|s| s.binding).collect();
-        assert_eq!(bindings, [1, 3, 5, 7, 9, 11, 13]);
-    }
 
     fn program(files: &[(&str, &str)], target: Target) -> Result<Program, Vec<Error>> {
         let files: Vec<(String, &str)> = files

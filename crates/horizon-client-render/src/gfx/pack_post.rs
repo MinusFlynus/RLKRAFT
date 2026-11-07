@@ -726,29 +726,14 @@ fn build_pass(
     let (mut kinds, mut slots) = (HashMap::new(), HashMap::new());
     let mut reads = 0u16;
     let mut shadow_reads = 0u16;
-    let prune = std::env::var("HORIZON_PACK_SAMPLER_PRUNE").as_deref() != Ok("0");
-    let used_samplers = || interface.samplers.iter().filter(|s| !prune || s.used);
-    // A declaration can also be a format directive: legacy `shadow` changes
-    // meaning when `watershadow` is declared, even if the latter is not read.
     let watershadow = interface.samplers.iter().any(|s| s.name == "watershadow");
-    let omitted = interface
-        .samplers
-        .iter()
-        .filter(|s| prune && !s.used)
-        .count();
-    if omitted > 0 {
-        notes.push(format!(
-            "{}: omitted {omitted} unused sampler declarations",
-            p.name
-        ));
-    }
     // A gbuffers pass draws into its buffers and the depth buffer: reading them as well would
     // be a feedback loop (undefined in GL, refused by wgpu), so those read a blank texture.
     let in_place = match geometry {
         Some(_) => p.buffers.iter().fold(0u16, |m, &b| m | 1 << b),
         None => 0,
     };
-    for s in used_samplers() {
+    for s in &interface.samplers {
         let mut src = source(&s.name, p.group.shadow(), shadow.is_some(), watershadow);
         let blank = match src {
             // The shadow pass writes the shadow map.
@@ -2618,150 +2603,6 @@ impl PackPost {
 mod tests {
     use super::*;
     use wgpu::TextureFormat as T;
-
-    #[test]
-    fn unused_sampler_bindings_can_be_omitted_without_changing_gpu_output() {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else {
-            eprintln!("GPU binding equivalence skipped: no adapter");
-            return;
-        };
-        eprintln!("Binding equivalence adapter: {:?}", adapter.get_info());
-        let (device, queue) =
-            pollster::block_on(adapter.request_device(&Default::default())).unwrap();
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: None,
-            source: wgpu::ShaderSource::Wgsl("@group(0) @binding(0) var<storage,read_write> result: vec4<f32>;
-                @group(0) @binding(1) var live: texture_2d<f32>;
-                @group(0) @binding(2) var sampleLive: sampler;
-                @group(0) @binding(3) var unused: texture_2d<f32>;
-                @group(0) @binding(4) var sampleUnused: sampler;
-                fn neverCalled() -> vec4<f32> { return textureSampleLevel(unused,sampleUnused,vec2(0.5),0.0); }
-                @compute @workgroup_size(1) fn main() { result=textureSampleLevel(live,sampleLive,vec2(0.5),0.0); }".into()),
-        });
-        let texture = wgpu::util::DeviceExt::create_texture_with_data(
-            &device,
-            &queue,
-            &wgpu::TextureDescriptor {
-                label: None,
-                size: wgpu::Extent3d {
-                    width: 1,
-                    height: 1,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: T::Rgba8Unorm,
-                usage: wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[],
-            },
-            wgpu::util::TextureDataOrder::LayerMajor,
-            &[64, 128, 192, 255],
-        );
-        let view = texture.create_view(&Default::default());
-        let sampler = device.create_sampler(&Default::default());
-        let output = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: 16,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
-            mapped_at_creation: false,
-        });
-        let read = device.create_buffer(&wgpu::BufferDescriptor {
-            label: None,
-            size: 16,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        let mut results = Vec::new();
-        for pruned in [false, true] {
-            let mut entries = vec![wgpu::BindGroupLayoutEntry {
-                binding: 0,
-                visibility: wgpu::ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::Buffer {
-                    ty: wgpu::BufferBindingType::Storage { read_only: false },
-                    has_dynamic_offset: false,
-                    min_binding_size: None,
-                },
-                count: None,
-            }];
-            let mut resources = vec![wgpu::BindGroupEntry {
-                binding: 0,
-                resource: output.as_entire_binding(),
-            }];
-            for binding in if pruned { &[1u32][..] } else { &[1u32, 3][..] } {
-                entries.extend([
-                    wgpu::BindGroupLayoutEntry {
-                        binding: *binding,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
-                    },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: *binding + 1,
-                        visibility: wgpu::ShaderStages::COMPUTE,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
-                    },
-                ]);
-                resources.extend([
-                    wgpu::BindGroupEntry {
-                        binding: *binding,
-                        resource: wgpu::BindingResource::TextureView(&view),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: *binding + 1,
-                        resource: wgpu::BindingResource::Sampler(&sampler),
-                    },
-                ]);
-            }
-            let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &entries,
-            });
-            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: None,
-                bind_group_layouts: &[Some(&layout)],
-                ..Default::default()
-            });
-            let pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: None,
-                layout: Some(&pipeline_layout),
-                module: &shader,
-                entry_point: Some("main"),
-                compilation_options: Default::default(),
-                cache: None,
-            });
-            let group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &layout,
-                entries: &resources,
-            });
-            let mut encoder = device.create_command_encoder(&Default::default());
-            {
-                let mut pass = encoder.begin_compute_pass(&Default::default());
-                pass.set_pipeline(&pipeline);
-                pass.set_bind_group(0, &group, &[]);
-                pass.dispatch_workgroups(1, 1, 1);
-            }
-            encoder.copy_buffer_to_buffer(&output, 0, &read, 0, 16);
-            queue.submit([encoder.finish()]);
-            read.slice(..).map_async(wgpu::MapMode::Read, |_| {});
-            device.poll(wgpu::PollType::wait_indefinitely()).unwrap();
-            results.push(read.slice(..).get_mapped_range().unwrap().to_vec());
-            read.unmap();
-        }
-        assert_eq!(
-            results[0], results[1],
-            "identical shader instructions and active input must produce identical output"
-        );
-        let floats: &[f32] = bytemuck::cast_slice(&results[1]);
-        assert!(floats[0] > 0.2 && floats[2] > 0.7 && floats[3] == 1.0);
-    }
 
     /// Two textures with a sampler each become two textures sharing one sampler variable.
     #[test]
